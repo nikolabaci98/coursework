@@ -1,0 +1,63 @@
+---
+title: "linear_regression_lab"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Simple Linear Regression
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(MASS)
+library(ISLR)
+boston <- read.csv("Boston.csv")
+head(boston)
+summary(boston)
+
+```
+
+We will try to predict variable medv (median house value) by using the 13
+other variables.
+Let us look at the replationship of medv and lstat first.
+
+```{r}
+boston %>%
+  ggplot() +
+  geom_point(mapping = aes(x = medv, y = lstat))
+  
+```
+
+Next, we will try to fit a simple linear regression.
+
+```{r}
+lm.fit=lm(medv~lstat, data = boston)
+summary(lm.fit)
+lm.fit
+```
+
+```{r}
+predict(lm.fit, data.frame(lstat = c(5, 10, 15)), interval="prediction")
+```
+```{r}
+attach(boston)
+plot(lstat, medv)+
+abline(lm.fit, lwd = 3, col="red")
+```
+```{r}
+par(mfrow=c(2, 2))
+plot(lm.fit)
+```
+
+```{r}
+plot(predict(lm.fit), residuals(lm.fit))
+plot(predict(lm.fit), rstudent(lm.fit))
+```
+
+```{r}
+plot(hatvalues(lm.fit))
+which.max(hatvalues(lm.fit))
+```

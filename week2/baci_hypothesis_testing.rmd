@@ -1,0 +1,77 @@
+---
+title: "hypothesis_testing.rmd"
+author: "Nikola Baci & Jake Hofman"
+date: "June 13, 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r}
+library(tidyverse)
+library(ggplot2)
+theme_set(theme_bw())
+set.seed(42)
+
+```
+# Estimating a proportion
+## Point estimate and sampling distribution
+
+Experiment: Flip a biased coin 100 times
+Repeat the experiment 100,000 times. Each time record the mean of the
+experiment in the variable p_hat.
+Finally, compare the given bias (p) with the mean of all the means in the p_hat.
+
+Conclusion: 
+
+```{r}
+estimate_coin_bais <- function(n, p){
+  mean(rbinom(n, 1, p))
+}
+
+n <- 100
+p <- 0.3
+p_hat <- replicate(1e5, estimate_coin_bais(n, p))
+
+# Plot the sampling distribution
+ggplot(data = data.frame(p_hat))+
+  geom_histogram(mapping = aes(x = p_hat), binwidth = 0.01)+
+  geom_vline(xintercept=p)+
+  geom_vline(xintercept=mean(p_hat), linetype=2, color = "red")
+  
+print(paste("n =", n, "p = ", p, "p_hat_bar = ", mean(p_hat)))
+
+plot_data <- data.frame()
+for(n in c(100, 200, 400, 800)){
+  tmp <- data.frame(n = n, p_hat = replicate(1e5, estimate_coin_bias(n, p)))
+  plot_data <- rbind(plot_data, tmp)
+}
+
+ggplot(data = plot_data)+
+  geom_histogram(mapping = aes(x = p_hat), binwidth = 0.01)+
+  facet_wrap(~ n, nrow = 1)
+
+se_data <- plot_data %>%
+  group_by(n) %>%
+  summarize(se  = sd(p_hat))
+
+ggplot(data = se_data)+
+  geom_point(mapping = aes(x = n, y = se))+
+  stat_function(fun= function(n) {sqrt(p * (1-p) / n)}, linetype = 2)
+       
+```
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

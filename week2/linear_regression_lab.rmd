@@ -6,7 +6,6 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
-
 # Simple Linear Regression Models
 
 ## Lab 3.6.2
@@ -80,3 +79,4 @@ summary(full_model_except_age)
 
 model = lm(data = boston, medv ~ lstat*age)
 summary(model)
+```

@@ -4,3 +4,6 @@
 #   decompress the first using gunzip, zless, zcat or similar
 #   then filter out rows that match using grep -E, egrep, awk, or similar
 #   write results to year_counts.tsv
+mv 'one_gram.gz'$'\r' one_gram.gz
+gzip -d one_gram.gz
+mv 'one_gram.gz'$'\r' one_gram.gz

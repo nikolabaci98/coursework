@@ -1,0 +1,185 @@
+---
+title: "Linear Regression"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Linear Regression
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(modelr)
+library(broom)
+library(scales)
+options(na.action = na.warn)
+
+theme_set(theme_bw())
+options(repr.plot.width=4, repr.plot.height=3)
+
+users  <-  read_tsv("users.tsv.gz")
+
+head(users)
+```
+
+```{r}
+users %>%
+  ggplot()+
+  geom_histogram(aes(x = daily.views), bins = 50)+
+  scale_x_log10(label=comma, breaks = 10^(0:ceiling(log10(max(users$daily.views))))) + #fancy way of saying x ticks should be 0 to 10,000
+  scale_y_continuous(label=comma)+
+  xlab("Daily pageviews") +
+  ylab("")
+```
+
+
+
+```{r}
+users <- filter(users, daily.views > 0)
+
+views_by_age_and_gander <- users %>%
+  filter(age < 90) %>%
+  group_by(age, gender) %>%
+  summarize(count = n(), 
+            median_daily_views = median(daily.views))
+head(views_by_age_and_gander)
+
+```
+
+```{r}
+#options(repr.plot.width=6, repr.plot.height=3)
+views_by_age_and_gander %>%
+  ggplot(aes(x = age, y = median_daily_views)) +
+  geom_point(aes(color = gender, size = median_daily_views)) +
+  geom_line(aes(linetype = gender, color = gender)) +
+  xlab("Age") +
+  ylab("Median Daily Pageviews") +
+  scale_size_area(guide = F) +
+  theme(legend.title = element_blank())
+```
+
+
+```{r}
+model_data <- filter(users, age >= 18, age <= 65)
+
+model_data %>%
+  ggplot(aes(x = age, y = daily.views)) +
+  geom_smooth(method = "lm")+
+  scale_y_log10(breaks= 1:100)
+```
+
+
+```{r}
+model <-  lm(log10(daily.views) ~ age, model_data)
+summary(model)
+tidy(model)
+glance(model)
+
+plot_data <- model_data %>%
+  data_grid(age) %>%
+  add_predictions(model) %>%
+  mutate(pred = 10^pred)
+head(plot_data)
+
+ggplot(plot_data, aes(x = age, y = pred))+
+  geom_line()
+```
+
+```{r}
+plot_data <- model_data %>%
+  group_by(age) %>%
+  summarize(count = n(), 
+            mean_daily_views = 10^(mean(log10(daily.views)))) %>%
+  add_predictions(model) %>%
+  mutate(pred = 10^pred)
+
+head(plot_data)
+ggplot(plot_data, aes(x = age, y = pred))+
+  geom_line(aes(y = pred)) +
+  geom_point(aes(y = mean_daily_views, size = count))+
+  scale_size_area(guide = F)
+```
+
+```{r}
+model_2 <- lm(log10(daily.views) ~ age + I(age^2), model_data)
+tidy(model_2)
+
+plot_data_2 <- model_data %>%
+  group_by(age) %>%
+  summarize(count = n(), 
+            mean_daily_views = 10^mean(log10(daily.views))) %>%
+  add_predictions(model_2) %>%
+  mutate(pred = 10^pred)
+
+head(plot_data_2)
+
+ggplot(plot_data_2, aes(x = age, y = pred)) +
+  geom_point(aes(y = mean_daily_views, size = count)) +
+  geom_line(aes(y = pred)) +
+  scale_size_area(guide = F)
+```
+
+```{r}
+model_3 <-  lm(log10(daily.views) ~ age+gender, model_data)
+summary(model_3)
+tidy(model_3)
+
+plot_data_3 <- model_data %>%
+  group_by(age, gender) %>%
+  summarize(count = n(), 
+            mean_daily_views = 10^(mean(log10(daily.views)))) %>%
+  add_predictions(model_3) %>%
+  mutate(pred = 10^pred)
+
+head(plot_data_3)
+ggplot(plot_data_3, aes(x = age, y = pred, color = gender))+
+  geom_line(aes(y = pred)) +
+  geom_point(aes(y = mean_daily_views, size = count))+
+  scale_size_area(guide = F)
+```
+
+```{r}
+model_4 <- lm(log10(daily.views) ~ age + I(age^2) + gender, model_data)
+tidy(model_4)
+
+plot_data_4 <- model_data %>%
+  group_by(age, gender) %>%
+  summarize(count = n(), 
+            mean_daily_views = 10^mean(log10(daily.views))) %>%
+  add_predictions(model_4) %>%
+  mutate(pred = 10^pred)
+#m <- model.matrix(model_4) #gives a matrix of how the model table looks like
+head(plot_data_4)
+
+ggplot(plot_data_4, aes(x = age, y = pred, color = gender)) +
+  geom_point(aes(y = mean_daily_views, size = count)) +
+  geom_line(aes(y = pred)) +
+  scale_size_area(guide = F)
+```
+
+```{r}
+model_5 <- lm(log10(daily.views) ~ (age + I(age^2)) * gender, model_data)
+tidy(model_5)
+
+plot_data_5 <- model_data %>%
+  group_by(age, gender) %>%
+  summarize(count = n(), 
+            mean_daily_views = 10^mean(log10(daily.views))) %>%
+  add_predictions(model_5) %>%
+  mutate(pred = 10^pred)
+
+head(model.matrix(model_5))#gives a matrix of how the model table looks like
+head(plot_data_5)
+
+ggplot(plot_data_5, aes(x = age, y = pred, color = gender)) +
+  geom_point(aes(y = mean_daily_views, size = count)) +
+  geom_line(aes(y = pred)) +
+  scale_size_area(guide = F)
+```
+
+```{r}
+
+```

@@ -4,6 +4,7 @@
 #   decompress the first using gunzip, zless, zcat or similar
 #   then filter out rows that match using grep -E, egrep, awk, or similar
 #   write results to year_counts.tsv
-mv 'one_gram.gz'$'\r' one_gram.gz
-gzip -d one_gram.gz
-mv 'one_gram.gz'$'\r' one_gram.gz
+
+gzip -d googlebooks-eng-all-1gram-20120701-1.gz
+
+cat googlebooks-eng-all-1gram-20120701-1 | egrep "^(18|19|20)[0-9][0-9]\s" > year_counts.tsv

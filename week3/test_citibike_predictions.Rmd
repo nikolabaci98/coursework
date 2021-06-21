@@ -1,0 +1,107 @@
+---
+title: "Prediction on Trips 2015"
+author: "Nikola Baci"
+date: "6/21/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(lubridate)
+library(modelr)
+
+load("predict_citibike.RData")
+load("trips_2015.RData")
+```
+
+# Prediction of the trips on theyear 2015
+
+## Engineer the features and clean the data
+
+```{r}
+# load the big dataframe, select only the yeah-month-day column,
+# count the number of trips per each day, filter out "2016-01-01"
+trips_per_day_2015 <- select(trips, ymd) %>%
+  group_by(ymd) %>%
+  summarize(num_trips = n()) %>%
+  filter(ymd < "2016-01-01") 
+
+# add the weather data
+weather <- mutate(weather,
+                  ymd = as.Date(parse_datetime(date)))
+
+# the weather data was supposed to have a Date-type column, but it did not,
+# so I added one
+trips_per_day_2015 <- inner_join(trips_per_day_2015, weather, by="ymd")
+
+# add the day of the week with lubridate (it encodes the days 1 to 7)
+trips_per_day_2015 <- mutate(trips_per_day_2015, day_of_week = wday(ymd))
+
+# decode the days
+trips_per_day_2015 <- mutate(trips_per_day_2015, 
+                        day_of_week=factor(day_of_week, levels=c(1,2,3,4,5,6,7), 
+                                           labels=c("Sunday", "Monday","Tuesday","Wednesday", "Thursday", "Friday", "Saturday")))
+
+# create a boolean column work_day (0 = weekend, 1 = weekday)
+trips_per_day_2015 <- mutate(trips_per_day_2015, 
+                        work_day = factor(day_of_week, 
+                                           levels=c("Sunday", "Monday","Tuesday","Wednesday", "Thursday", "Friday", "Saturday"), 
+                                           labels=c(0,1,1,1,1,1,0)))
+
+# create a boolean column did_not_snow (0 = snowed, 1 = did not snow)
+trips_per_day_2015 <- mutate(trips_per_day_2015, did_not_snow = 1 - as.integer(trips_per_day_2015$snwd > 5))
+
+# create a boolean column did_not_rain (0 = rained, 1 = did not rain)
+trips_per_day_2015 <- mutate(trips_per_day_2015, did_not_rain = 1 -as.integer(trips_per_day_2015$prcp > 1))
+
+# the model was trained with tmax being 1/10 of the original tmax, so lets change it to that
+trips_per_day_2015 <- trips_per_day_2015 %>%
+  mutate(tmax = tmax / 10)
+```
+
+## Let's test the the model on this data set
+
+```{r}
+# make predictions
+trips_per_day_2015 <-  trips_per_day_2015 %>%
+  add_predictions(model_6)
+
+# calculate the Root Mean Square Error
+error_2015 <- sqrt(mean((predict(model_6, trips_per_day_2015) - trips_per_day_2015$num_trips)^2))
+
+# plot the results
+trips_per_day_2015 %>%
+  ggplot() +
+  geom_point(aes(x = pred, y = num_trips)) +
+  geom_abline(linetype = "dashed") +
+  xlab("Prediction") +
+  ylab("Number of Trips")
+
+trips_per_day_2015 %>% 
+  ggplot() +
+  geom_line(aes(x = ymd, y = pred)) +
+  geom_point(aes(x = ymd, y = num_trips)) +
+  xlab("Date") +
+  ylab("Number of Trips")
+```
+
+## Conlcusions
+
+In my training notebook "predict_citibike.Rmd", I expressed my optimism that
+the model will fit the same or better to the new dataset compared to my very
+small test set (37 observations). It turns out that the model is doing worst
+than I predicted.
+
+Reflecting on why the model did more poorly that I thought, could be that my 
+test evaluation was a not a big enough dataset to give me good insights on the 
+model. Hence, by having more observations, the residuals help increase the error.
+
+Another problem is the model itself, as we can see from the first graph above, 
+the model is not fitted properly to the data. By eye I could suggest that a 
+smaller intercept and a bigger slope could help in this case. I do not 
+exclude the idea that this could also be due to change or specific to this dataset,
+meaning that in another dataset the model could perform much better.
+
+
+
+

@@ -1,0 +1,339 @@
+---
+title: "Citibike Trip Predictions with Linear Regression"
+author: "Nikola Baci"
+date: "6/17/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(modelr)
+library(scales)
+library(here)
+library(lubridate)
+
+theme_set(theme_bw())
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Predict citibikes trips using Linear Regression
+
+Read the file and examine its contents.
+
+```{r}
+trips_per_day <- read_tsv("trips_per_day.tsv")
+head(trips_per_day, 10)
+summary(trips_per_day)
+nrow(trips_per_day)
+```
+ Let's add to this table a couple of other columns that might help us in out
+ predictions.
+
+```{r}
+trips_per_day <- mutate(trips_per_day, day_of_week = wday(ymd))
+trips_per_day <- mutate(trips_per_day, 
+                        day_of_week=factor(day_of_week, levels=c(1,2,3,4,5,6,7), 
+                                           labels=c("Sunday", "Monday","Tuesday","Wednesday", "Thursday", "Friday", "Saturday")))
+trips_per_day <- mutate(trips_per_day, 
+                        work_day = factor(day_of_week, 
+                                           levels=c("Sunday", "Monday","Tuesday","Wednesday", "Thursday", "Friday", "Saturday"), 
+                                           labels=c(0,1,1,1,1,1,0)))
+
+holidays <- read.delim("holiday.txt", sep=",")
+holidays <- mutate(holidays, date = as.Date(holidays$date))
+holidays <- filter(holidays, date >= "2014-01-01", date <= "2014-12-31") %>%
+  select(-row)
+
+trips_per_day <- left_join(trips_per_day, holidays, by= c("ymd" = "date"))
+
+trips_per_day$holiday[! is.na(trips_per_day$holiday)] <- 1
+trips_per_day$holiday[is.na(trips_per_day$holiday)] <- 0
+
+
+trips_per_day <- mutate(trips_per_day, did_not_snow = 1 - as.integer(trips_per_day$snwd > 5))
+trips_per_day <- mutate(trips_per_day, did_not_rain = 1 -as.integer(trips_per_day$prcp > 1))
+
+```
+Now the table is composed of the following columns:
+ 
+ 1. ymd: year-month-day 
+ 2. num_trips: the number of trips for the given day in ymd column
+ 3. data: an integer version of ymd column
+ 4. prcp: precipitation level on the give date of type Double
+ 5. snwd: snow depth on the given day of type Double 
+ 6. snow: snow level on the given day of type Double ??
+ 7. tmax: the max temperature on the given day
+ 8. tmin: the min temperature on the given day
+ 9. day_of_week: label of the days Monday through Sunday
+ 10. work_day: indicating if the day is a Monday to Friday (0=weekend)
+ 11. holiday: indicating if the day is a holiday or not (0=not holiday)
+ 12. did_not_snow: indicating if it snowed or not (0=snow)
+ 13. did_not_rain: indicating if it rained or not (0=rained)
+ 
+Proceed to split the data into train, validation and test set with ratio 8:1:1.
+We will train the model on the train set, verify its correctness on the
+validation set, and finally we will test the model on the test set.
+
+```{r}
+set.seed(42)
+
+num_days <- nrow(trips_per_day)
+days <- c(1:num_days)
+
+frac_train <- 0.8
+frac_validation <- 0.1
+
+
+num_train <- floor(frac_train * num_days)
+num_validation <- floor(frac_validation * num_days)
+
+train_data <- sample(days, num_train, replace = FALSE)
+trips_per_day_train <- trips_per_day[train_data, ]
+
+days <- days[! days %in% train_data]
+validation_data <- sample(days, num_validation, replace = FALSE)
+trips_per_day_validation <- trips_per_day[validation_data, ]
+
+days <- days[! days %in% validation_data]
+test_data <- days
+trips_per_day_test <- trips_per_day[test_data, ]
+
+```
+
+## Trying Different Models
+
+Here we will use the tmin to make prediction on the number of trips each day and
+we will test on different degrees of polynomial functions.
+
+For each degree we record the train error and the validation error. Plot these
+records and see the lowest vallay in the graph, that represents the degree we 
+should choose.
+
+```{r}
+K <- 1:8
+train_1_err <- c()
+validate_1_err <- c()
+for(k in K){
+        model <- lm(num_trips ~ poly(tmin, k, raw = T), data = trips_per_day_train)
+        train_1_err[k] <- sqrt(mean((predict(model, trips_per_day_train) - trips_per_day_train$num_trips)^2))
+        validate_1_err[k] <- sqrt(mean((predict(model, trips_per_day_validation) - trips_per_day_validation$num_trips)^2))
+}
+
+plot_data_1_err <- data.frame(K, train_1_err, validate_1_err)
+
+plot_data_1_err <- data.frame(K, train_1_err, validate_1_err) %>%
+  gather("split", "error", -K)
+
+plot_data_1_err %>%
+        ggplot() +
+        geom_line(aes(x = K, y = error, color = split))+
+        xlab("Polynomial Power")+
+        ylab("Root Mean Squared Error")
+        
+```
+
+
+After choosing the degree, we plot the data and see how our regression model
+fit the data.
+
+```{r}
+model_1 <- lm(num_trips ~ poly(tmin, 2, raw = T), data = trips_per_day_train)
+
+trips_per_day_train_1 <- trips_per_day_train %>%
+  add_predictions(model_1) %>%
+  mutate(split = "train")
+
+trips_per_day_validation_1 <- trips_per_day_validation %>%
+  add_predictions(model_1) %>%
+  mutate(split = "validate")
+
+plot_data_1 <- bind_rows(trips_per_day_train_1, trips_per_day_validation_1)
+
+plot_data_1 %>%
+ggplot(aes(x = tmin, y = num_trips)) +
+  geom_point(aes(color = split)) +
+  geom_line(aes(y = pred)) +
+  xlab('Minimum temperature') +
+  ylab('Daily trips')
+```
+
+
+Check the correlation (linear relationship) between the "num_trips" and the other columns.
+The results show that as the "tmax" goes up, so does the "num_trips". On the other hand, 
+as the "snwd" goes down, it drags along the "num_trips".
+
+```{r}
+column_names <- c("prcp", "snwd", "snow", "tmin", "tmax")
+
+correlation_coef <- c()
+k <- 1
+for(col in column_names){
+  correlation_coef[k] <- cor(x=trips_per_day_train$num_trips, y=trips_per_day_train[[col]])
+  k <- k+1
+}
+
+correlation_coef
+```
+
+
+## Let's test models of multivariables
+
+In the next couple of code chunks we experiment with different formulas for
+out regression model. Then we put the prediction in the validation table that 
+corresponds to that model, and finally I plot the results and analyze the
+performance of the model.
+
+```{r}
+#fit the model
+model_2 <- lm(num_trips ~ tmin + work_day, data = trips_per_day_train)
+
+#create a new validation table that will contain the predictions of the model
+trips_per_day_validation_2 <- trips_per_day_validation %>%
+  add_predictions(model_2)
+
+#plot the regression line and the actual values
+trips_per_day_validation_2 %>%
+ggplot(aes(x = tmin, y = num_trips, color = work_day)) +
+  geom_point(aes(y = num_trips)) +
+  geom_line(aes(y = pred)) +
+  xlab('Minimum temperature') +
+  ylab('Daily trips')
+
+#plot the prediction and actual values
+trips_per_day_validation_2 %>%
+  ggplot()+
+  geom_point(aes(x = pred, y = num_trips))+
+  geom_abline(linetype = "dashed")
+```
+
+Let's see how a small change in the formula, could change our Root Mean Square Error(RMSE).
+The results below, do not show a significant change.
+
+```{r}
+model_3 <- lm(num_trips ~ tmin * work_day, data = trips_per_day_train)
+
+model_2_err <- sqrt(mean((predict(model_2, trips_per_day_validation) - trips_per_day_validation$num_trips)^2))
+model_3_err <- sqrt(mean((predict(model_3, trips_per_day_validation) - trips_per_day_validation$num_trips)^2))
+cat("model 2 error:", model_2_err,"\n")
+cat("model 3 error:", model_3_err,"\n")
+
+```
+Try a different formula for the model.
+With this model we seem to have a lower prediction error.
+
+```{r}
+model_5 <- lm(num_trips ~ (tmax + I(tmax^2))*work_day, data = trips_per_day_train)
+
+model_5_err <- sqrt(mean((predict(model_5, trips_per_day_validation) - trips_per_day_validation$num_trips)^2))
+cat("model 5 error:", model_5_err,"\n")
+
+
+trips_per_day_validation_5 <- trips_per_day_validation %>%
+  add_predictions(model_5) 
+
+trips_per_day_validation_5 %>%
+  ggplot(aes(x = ymd, y = num_trips, color = work_day)) +
+  geom_point(aes(y = num_trips)) +
+  geom_line(aes(y = pred)) +
+  xlab('Rain') +
+  ylab('Daily trips')
+
+trips_per_day_validation_5 %>%
+  ggplot()+
+  geom_point(aes(x = pred, y = num_trips))+
+  geom_abline(linetype = "dashed")
+```
+## Final Model
+
+After experimenting with a number of formulas for the regression model, 
+I decided to go with this model. This model performed better on the validation
+set the the other models I tried.
+
+```{r}
+model_6 <- lm(num_trips ~ (tmax + I(tmax^2)) + work_day + did_not_rain*did_not_snow, data = trips_per_day_train)
+
+model_6_err <- sqrt(mean((predict(model_6, trips_per_day_validation) - trips_per_day_validation$num_trips)^2))
+cat("model 6 error:", model_6_err,"\n")
+
+trips_per_day_validation_6 <- trips_per_day_validation %>%
+  add_predictions(model_6) 
+
+
+trips_per_day_validation_6 %>%
+  ggplot(aes(x = tmax, y = num_trips, color = work_day)) +
+  geom_point(aes(y = num_trips)) +
+  geom_line(aes(y = pred)) +
+  xlab('Max Temp') +
+  ylab('Daily trips')
+
+
+trips_per_day_validation_6 %>%
+  ggplot()+
+  geom_point(aes(x = pred, y = num_trips))+
+  geom_abline(linetype = "dashed")
+```
+## Save the model
+
+Let's save the model and all the objects needed to perform remote testing of the model.
+Also, in the .RData I included two graphs that show the trends between prediction
+and the actual values.
+
+```{r}
+date_count_plot <- trips_per_day_validation_6 %>% 
+  ggplot() +
+  geom_line(aes(x = ymd, y = pred)) +
+  geom_point(aes(x = ymd, y = num_trips)) +
+  xlab("Date") +
+  ylab("Number of Trips")
+
+actual_vs_pred_plot <- trips_per_day_validation_6 %>%
+  ggplot()+
+  geom_point(aes(x = pred, y = num_trips))+
+  geom_abline(linetype = "dashed")
+
+date_count_plot
+actual_vs_pred_plot
+
+save(trips_per_day, trips_per_day_train, trips_per_day_validation, trips_per_day_test, model_6, date_count_plot, actual_vs_pred_plot, file = "predict_citibike.RData")
+```
+
+## The moment of truth
+
+After picking what seemed to be the best model for prediction for the num_trips, 
+we finally use this model to make prediction on the test data.
+
+```{r}
+trips_per_day_test <-  trips_per_day_test %>%
+  add_predictions(model_6)
+
+pred_error <- sqrt(mean((predict(model_6, trips_per_day_test) - trips_per_day_test$num_trips)^2))
+cat("final model error:", pred_error,"\n")
+
+
+trips_per_day_test %>% 
+  ggplot() +
+  geom_line(aes(x = ymd, y = pred)) +
+  geom_point(aes(x = ymd, y = num_trips)) +
+  xlab("Date") +
+  ylab("Number of Trips")
+
+
+trips_per_day_test %>%
+  ggplot()+
+  geom_point(aes(x = pred, y = num_trips))+
+  geom_abline(linetype = "dashed")
+```
+
+## Conclusions:
+
+The model did not perform as I expected on the test dataset. The RMSE is higher
+than the validation error. This could be dues to external factors such as chance 
+or to the lack of sufficient number of observations.Another reason the model
+did not perform as I expected could be the choice of the formula and the 
+variables used on this formula.
+
+It is hard to say how this model will perform on future data, but I am optimistic 
+that it will be the same as now or a bit better. The reason I say so is because
+the model is taking into consideration a number of important factors such as 
+the day of the week and the weather that greatly effect the day-to-day number of
+rides.
